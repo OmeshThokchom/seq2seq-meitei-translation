@@ -755,3 +755,16 @@ evaluateAndShowAttention('ꯆꯍꯤ ꯈꯔꯒꯤ ꯑꯣꯏꯅ ꯔꯥꯖ꯭ꯌ �
 #    -  Train a new Decoder for translation from there
 #
 
+
+
+# Save full checkpoint with models + vocabs + params
+torch.save({
+    'encoder_state_dict': encoder.state_dict(),
+    'decoder_state_dict': decoder.state_dict(),
+    'input_lang': input_lang,   # contains word2index, index2word
+    'output_lang': output_lang,
+    'hidden_size': hidden_size,
+    'max_length': MAX_LENGTH
+}, "seq2seq_mni_full.pth")
+
+print("✅ Full model + vocab saved to seq2seq_mni_full.pth")
