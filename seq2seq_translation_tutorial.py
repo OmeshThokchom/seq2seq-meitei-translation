@@ -24,10 +24,10 @@ EOS_token = 1
 class Lang:
     def __init__(self, name):
         self.name = name
-        self.word2index = {}
+        self.word2index = {"<UNK>": 2}
         self.word2count = {}
-        self.index2word = {0: "SOS", 1: "EOS"}
-        self.n_words = 2  # Count SOS and EOS
+        self.index2word = {0: "SOS", 1: "EOS", 2: "<UNK>"}
+        self.n_words = 3  # Count SOS, EOS, and UNK
 
     def addSentence(self, sentence):
         for word in sentence.split(' '):
@@ -326,7 +326,8 @@ class AttnDecoderRNN(nn.Module):
 #
 
 def indexesFromSentence(lang, sentence):
-    return [lang.word2index[word] for word in sentence.split(' ')]
+    # Use <UNK> token for unknown words
+    return [lang.word2index.get(word, lang.word2index["<UNK>"]) for word in sentence.split(' ')]
 
 def tensorFromSentence(lang, sentence):
     indexes = indexesFromSentence(lang, sentence)
@@ -486,7 +487,7 @@ def train(train_dataloader, encoder, decoder, n_epochs, learning_rate=0.001,
                 'loss': loss
             }, f"checkpoints/checkpoint_epoch_{epoch}.pth")
             print(f"💾 Saved checkpoint at epoch {epoch}")
-
+ 
     showPlot(plot_losses)
 
 
@@ -561,130 +562,99 @@ import os, glob
 hidden_size = 128
 batch_size = 32
 
-input_lang, output_lang, train_dataloader = get_dataloader(batch_size)
 
-encoder = EncoderRNN(input_lang.n_words, hidden_size).to(device)
-decoder = AttnDecoderRNN(hidden_size, output_lang.n_words).to(device)
+if __name__ == "__main__":
+    input_lang, output_lang, train_dataloader = get_dataloader(batch_size)
 
-encoder_optimizer = optim.Adam(encoder.parameters(), lr=0.001)
-decoder_optimizer = optim.Adam(decoder.parameters(), lr=0.001)
+    encoder = EncoderRNN(input_lang.n_words, hidden_size).to(device)
+    decoder = AttnDecoderRNN(hidden_size, output_lang.n_words).to(device)
 
-# 🔄 Auto-load latest checkpoint if exists
-checkpoint_dir = "checkpoints"
-os.makedirs(checkpoint_dir, exist_ok=True)
+    encoder_optimizer = optim.Adam(encoder.parameters(), lr=0.001)
+    decoder_optimizer = optim.Adam(decoder.parameters(), lr=0.001)
 
-checkpoint_files = glob.glob(os.path.join(checkpoint_dir, "checkpoint_epoch_*.pth"))
+    # 🔄 Auto-load latest checkpoint if exists
+    checkpoint_dir = "checkpoints"
+    os.makedirs(checkpoint_dir, exist_ok=True)
 
-if checkpoint_files:
-    checkpoint_files.sort(key=lambda x: int(x.split("_")[-1].split(".")[0]))
-    latest_checkpoint = checkpoint_files[-1]
+    checkpoint_files = glob.glob(os.path.join(checkpoint_dir, "checkpoint_epoch_*.pth"))
 
-    print(f"Loading checkpoint: {latest_checkpoint}")
-    checkpoint = torch.load(latest_checkpoint, map_location=device)
+    if checkpoint_files:
+        checkpoint_files.sort(key=lambda x: int(x.split("_")[-1].split(".")[0]))
+        latest_checkpoint = checkpoint_files[-1]
 
-    encoder.load_state_dict(checkpoint['encoder_state_dict'])
-    decoder.load_state_dict(checkpoint['decoder_state_dict'])
-    encoder_optimizer.load_state_dict(checkpoint['encoder_optimizer_state_dict'])
-    decoder_optimizer.load_state_dict(checkpoint['decoder_optimizer_state_dict'])
+        print(f"Loading checkpoint: {latest_checkpoint}")
+        checkpoint = torch.load(latest_checkpoint, map_location=device)
 
-    start_epoch = checkpoint['epoch'] + 1
-    print(f"✅ Resumed from epoch {start_epoch}, last loss = {checkpoint['loss']:.4f}")
-else:
-    print("⚡ No checkpoints found. Starting fresh.")
-    start_epoch = 1
+        encoder.load_state_dict(checkpoint['encoder_state_dict'])
+        decoder.load_state_dict(checkpoint['decoder_state_dict'])
+        encoder_optimizer.load_state_dict(checkpoint['encoder_optimizer_state_dict'])
+        decoder_optimizer.load_state_dict(checkpoint['decoder_optimizer_state_dict'])
 
-# 🚀 Start training from start_epoch
-train(train_dataloader, encoder, decoder, n_epochs=80, print_every=5, plot_every=5)
+        start_epoch = checkpoint['epoch'] + 1
+        print(f"✅ Resumed from epoch {start_epoch}, last loss = {checkpoint['loss']:.4f}")
+    else:
+        print("⚡ No checkpoints found. Starting fresh.")
+        start_epoch = 1
 
-######################################################################
-#
-# Set dropout layers to ``eval`` mode
-encoder.eval()
-decoder.eval()
-evaluateRandomly(encoder, decoder)
+    # 🚀 Start training from start_epoch
+    train(train_dataloader, encoder, decoder, n_epochs=80, print_every=5, plot_every=5)
 
+    ######################################################################
+    #
+    # Set dropout layers to ``eval`` mode
+    encoder.eval()
+    decoder.eval()
+    evaluateRandomly(encoder, decoder)
 
-######################################################################
-# Visualizing Attention
-# ---------------------
-#
-# A useful property of the attention mechanism is its highly interpretable
-# outputs. Because it is used to weight specific encoder outputs of the
-# input sequence, we can imagine looking where the network is focused most
-# at each time step.
-#
-# You could simply run ``plt.matshow(attentions)`` to see attention output
-# displayed as a matrix. For a better viewing experience we will do the
-# extra work of adding axes and labels:
-#
+    ######################################################################
+    # Visualizing Attention
+    # ---------------------
+    #
+    # A useful property of the attention mechanism is its highly interpretable
+    # outputs. Because it is used to weight specific encoder outputs of the
+    # input sequence, we can imagine looking where the network is focused most
+    # at each time step.
+    #
+    # You could simply run ``plt.matshow(attentions)`` to see attention output
+    # displayed as a matrix. For a better viewing experience we will do the
+    # extra work of adding axes and labels:
+    #
 
-def showAttention(input_sentence, output_words, attentions):
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    cax = ax.matshow(attentions.cpu().numpy(), cmap='bone')
-    fig.colorbar(cax)
+    def showAttention(input_sentence, output_words, attentions):
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        cax = ax.matshow(attentions.cpu().numpy(), cmap='bone')
+        fig.colorbar(cax)
 
-    # Set up axes
-    ax.set_xticklabels([''] + input_sentence.split(' ') +
-                       ['<EOS>'], rotation=90)
-    ax.set_yticklabels([''] + output_words)
+        # Set up axes
+        ax.set_xticklabels([''] + input_sentence.split(' ') +
+                           ['<EOS>'], rotation=90)
+        ax.set_yticklabels([''] + output_words)
 
-    # Show label at every tick
-    ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
-    ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
+        # Show label at every tick
+        ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
+        ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
 
-    plt.show()
+        plt.show()
 
+    def evaluateAndShowAttention(input_sentence):
+        output_words, attentions = evaluate(encoder, decoder, input_sentence, input_lang, output_lang)
+        print('input =', input_sentence)
+        print('output =', ' '.join(output_words))
+        showAttention(input_sentence, output_words, attentions[0, :len(output_words), :])
 
-def evaluateAndShowAttention(input_sentence):
-    output_words, attentions = evaluate(encoder, decoder, input_sentence, input_lang, output_lang)
-    print('input =', input_sentence)
-    print('output =', ' '.join(output_words))
-    showAttention(input_sentence, output_words, attentions[0, :len(output_words), :])
+    evaluateAndShowAttention('what is your name ?')
+    evaluateAndShowAttention('ꯑꯩꯅꯥ ꯅꯉꯒꯤꯗꯃꯛ ꯍꯥꯌꯒꯅꯤ꯫')
+    evaluateAndShowAttention('ꯆꯍꯤ ꯈꯔꯒꯤ ꯑꯣꯏꯅ ꯔꯥꯖ꯭ꯌ ꯑꯁꯤꯅ ꯕꯦꯟꯗꯤꯕꯨ ꯁꯧꯒꯠꯂꯤ꯫')
 
+    # Save full checkpoint with models + vocabs + params
+    torch.save({
+        'encoder_state_dict': encoder.state_dict(),
+        'decoder_state_dict': decoder.state_dict(),
+        'input_lang': input_lang,   # contains word2index, index2word
+        'output_lang': output_lang,
+        'hidden_size': hidden_size,
+        'max_length': MAX_LENGTH
+    }, "seq2seq_mni_full.pth")
 
-evaluateAndShowAttention('what is your name ?')
-
-evaluateAndShowAttention('ꯑꯩꯅꯥ ꯅꯉꯒꯤꯗꯃꯛ ꯍꯥꯌꯒꯅꯤ꯫')
-
-evaluateAndShowAttention('ꯆꯍꯤ ꯈꯔꯒꯤ ꯑꯣꯏꯅ ꯔꯥꯖ꯭ꯌ ꯑꯁꯤꯅ ꯕꯦꯟꯗꯤꯕꯨ ꯁꯧꯒꯠꯂꯤ꯫')
-
-
-
-######################################################################
-# Exercises
-# =========
-#
-# -  Try with a different dataset
-#
-#    -  Another language pair
-#    -  Human → Machine (e.g. IOT commands)
-#    -  Chat → Response
-#    -  Question → Answer
-#
-# -  Replace the embeddings with pretrained word embeddings such as ``word2vec`` or
-#    ``GloVe``
-# -  Try with more layers, more hidden units, and more sentences. Compare
-#    the training time and results.
-# -  If you use a translation file where pairs have two of the same phrase
-#    (``I am test \t I am test``), you can use this as an autoencoder. Try
-#    this:
-#
-#    -  Train as an autoencoder
-#    -  Save only the Encoder network
-#    -  Train a new Decoder for translation from there
-#
-
-
-
-# Save full checkpoint with models + vocabs + params
-torch.save({
-    'encoder_state_dict': encoder.state_dict(),
-    'decoder_state_dict': decoder.state_dict(),
-    'input_lang': input_lang,   # contains word2index, index2word
-    'output_lang': output_lang,
-    'hidden_size': hidden_size,
-    'max_length': MAX_LENGTH
-}, "seq2seq_mni_full.pth")
-
-print("✅ Full model + vocab saved to seq2seq_mni_full.pth")
+    print("✅ Full model + vocab saved to seq2seq_mni_full.pth")
