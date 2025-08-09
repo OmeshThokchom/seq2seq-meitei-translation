@@ -2,6 +2,15 @@
 
 This project implements a sequence-to-sequence (Seq2Seq) neural translation model for English ↔ Meitei (Manipuri) using PyTorch. It is designed for large-scale training and inference, with support for attention and robust handling of unknown tokens.
 
+🚀 Just pushed my UPDATED Seq2Seq translator for Meitei Mayek! 
+
+Built on the **OFFICIAL PyTorch seq2seq with attention tutorial** (originally for French-English translation) :contentReference[oaicite:2]{index=2}.  
+Added dope custom tokenizers, Meitei embeddings, and adapted the decoder logic to support our Mayek script.
+
+Check it out: https://github.com/OmeshThokchom/seq2seq-meitei-translation  
+Clone, train, test – and drop me your feedback or feature requests. Let’s make NLP lit for Meitei 💥
+
+
 ## Features
 - Encoder-Decoder architecture with GRU layers
 - Bahdanau Attention mechanism
