@@ -106,7 +106,7 @@ def readLangs(lang1, lang2, reverse=False):
 # earlier).
 #
 
-MAX_LENGTH = 128
+MAX_LENGTH = 256
 
 eng_prefixes = (
     "i am ", "i m ",
@@ -142,7 +142,9 @@ def filterPairs(pairs):
 
 def prepareData(lang1, lang2, reverse=False):
     input_lang, output_lang, pairs = readLangs(lang1, lang2, reverse)
-    print("Read %s sentence pairs" % len(pairs))
+    # Filter out pairs that do not have exactly two elements (tab separator issue)
+    pairs = [p for p in pairs if len(p) == 2]
+    print("Read %s valid sentence pairs" % len(pairs))
     pairs = filterPairs(pairs)
     print("Trimmed to %s sentence pairs" % len(pairs))
     print("Counting words...")
@@ -347,8 +349,8 @@ def get_dataloader(batch_size):
     target_ids = np.zeros((n, MAX_LENGTH), dtype=np.int32)
 
     for idx, (inp, tgt) in enumerate(pairs):
-        inp_ids = indexesFromSentence(input_lang, inp)
-        tgt_ids = indexesFromSentence(output_lang, tgt)
+        inp_ids = indexesFromSentence(input_lang, inp)[:MAX_LENGTH-1]  # leave space for EOS
+        tgt_ids = indexesFromSentence(output_lang, tgt)[:MAX_LENGTH-1]
         inp_ids.append(EOS_token)
         tgt_ids.append(EOS_token)
         input_ids[idx, :len(inp_ids)] = inp_ids
