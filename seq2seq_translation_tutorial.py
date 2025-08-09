@@ -1,17 +1,22 @@
+
+# Core imports for data handling, neural network, and utilities
 from __future__ import unicode_literals, print_function, division
 from io import open
 import unicodedata
 import re
 import random
 
+# PyTorch imports for model, optimization, and tensor operations
 import torch
 import torch.nn as nn
 from torch import optim
 import torch.nn.functional as F
 
+# Numpy and PyTorch DataLoader for efficient batch processing
 import numpy as np
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler
 
+# Set device to GPU if available, else CPU
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -21,19 +26,23 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 SOS_token = 0
 EOS_token = 1
 
+
+# Language vocabulary class for mapping words to indices and vice versa
 class Lang:
     def __init__(self, name):
         self.name = name
-        self.word2index = {"<UNK>": 2}
-        self.word2count = {}
-        self.index2word = {0: "SOS", 1: "EOS", 2: "<UNK>"}
+        self.word2index = {"<UNK>": 2}  # Unknown token always at index 2
+        self.word2count = {}             # Word frequency counter
+        self.index2word = {0: "SOS", 1: "EOS", 2: "<UNK>"}  # Special tokens
         self.n_words = 3  # Count SOS, EOS, and UNK
 
     def addSentence(self, sentence):
+        # Add all words in a sentence to the vocabulary
         for word in sentence.split(' '):
             self.addWord(word)
 
     def addWord(self, word):
+        # Add a single word to the vocabulary
         if word not in self.word2index:
             self.word2index[word] = self.n_words
             self.word2count[word] = 1
@@ -52,6 +61,8 @@ class Lang:
 
 # Turn a Unicode string to plain ASCII, thanks to
 # https://stackoverflow.com/a/518232/2809427
+
+# Convert Unicode string to plain ASCII (not used in current normalization)
 def unicodeToAscii(s):
     return ''.join(
         c for c in unicodedata.normalize('NFD', s)
@@ -65,6 +76,8 @@ def unicodeToAscii(s):
 #    s = re.sub(r"[^a-zA-Z!?]+", r" ", s)
 #    return s.strip()
 #
+
+# Normalize string (currently just trims whitespace, keeps all Unicode)
 def normalizeString(s):
     return s.strip()  # ✅ keep all Unicode chars
 
@@ -76,6 +89,8 @@ def normalizeString(s):
 # flag to reverse the pairs.
 #
 
+
+# Read parallel corpus and create language objects
 def readLangs(lang1, lang2, reverse=False):
     print("Reading lines...")
 
@@ -86,7 +101,7 @@ def readLangs(lang1, lang2, reverse=False):
     # Split every line into pairs and normalize
     pairs = [[normalizeString(s) for s in l.split('\t')] for l in lines]
 
-    # Reverse pairs, make Lang instances
+    # Reverse pairs if needed, and create Lang objects
     if reverse:
         pairs = [list(reversed(p)) for p in pairs]
         input_lang = Lang(lang2)
@@ -106,7 +121,7 @@ def readLangs(lang1, lang2, reverse=False):
 # earlier).
 #
 
-MAX_LENGTH = 64
+MAX_LENGTH = 128
 
 eng_prefixes = (
     "i am ", "i m ",
@@ -123,9 +138,13 @@ eng_prefixes = (
 #        p[1].startswith(eng_prefixes)
 #
 
+
+# Filter sentence pairs by length
 def filterPair(p):
     return len(p[0].split(' ')) < MAX_LENGTH and len(p[1].split(' ')) < MAX_LENGTH
 
+
+# No filtering applied (can be customized)
 def filterPairs(pairs):
     return pairs  # no filtering at all
 
@@ -140,6 +159,8 @@ def filterPairs(pairs):
 # -  Make word lists from sentences in pairs
 #
 
+
+# Prepare data: read, filter, and build vocabularies
 def prepareData(lang1, lang2, reverse=False):
     input_lang, output_lang, pairs = readLangs(lang1, lang2, reverse)
     # Filter out pairs that do not have exactly two elements (tab separator issue)
@@ -149,8 +170,8 @@ def prepareData(lang1, lang2, reverse=False):
     print("Trimmed to %s sentence pairs" % len(pairs))
     print("Counting words...")
     for pair in pairs:
-        input_lang.addSentence(pair[0])
-        output_lang.addSentence(pair[1])
+        input_lang.addSentence(pair[0])  # Add input sentence words
+        output_lang.addSentence(pair[1]) # Add output sentence words
     print("Counted words:")
     print(input_lang.name, input_lang.n_words)
     print(output_lang.name, output_lang.n_words)
@@ -161,18 +182,20 @@ print(random.choice(pairs))
 
 
 
+
+# Encoder RNN: embeds input and encodes with GRU
 class EncoderRNN(nn.Module):
     def __init__(self, input_size, hidden_size, dropout_p=0.1):
         super(EncoderRNN, self).__init__()
         self.hidden_size = hidden_size
 
-        self.embedding = nn.Embedding(input_size, hidden_size)
-        self.gru = nn.GRU(hidden_size, hidden_size, batch_first=True)
+        self.embedding = nn.Embedding(input_size, hidden_size)  # Word embedding
+        self.gru = nn.GRU(hidden_size, hidden_size, batch_first=True)  # GRU layer
         self.dropout = nn.Dropout(dropout_p)
 
     def forward(self, input):
-        embedded = self.dropout(self.embedding(input))
-        output, hidden = self.gru(embedded)
+        embedded = self.dropout(self.embedding(input))  # Embed and apply dropout
+        output, hidden = self.gru(embedded)             # Encode sequence
         return output, hidden
 
 ######################################################################
@@ -204,6 +227,8 @@ class EncoderRNN(nn.Module):
 #
 
 
+
+# Simple Decoder RNN (no attention)
 class DecoderRNN(nn.Module):
     def __init__(self, hidden_size, output_size):
         super(DecoderRNN, self).__init__()
@@ -217,17 +242,18 @@ class DecoderRNN(nn.Module):
         decoder_hidden = encoder_hidden
         decoder_outputs = []
 
+        # Decode sequence step by step
         for i in range(MAX_LENGTH):
             decoder_output, decoder_hidden  = self.forward_step(decoder_input, decoder_hidden)
             decoder_outputs.append(decoder_output)
 
             if target_tensor is not None:
                 # Teacher forcing: Feed the target as the next input
-                decoder_input = target_tensor[:, i].unsqueeze(1) # Teacher forcing
+                decoder_input = target_tensor[:, i].unsqueeze(1)
             else:
                 # Without teacher forcing: use its own predictions as the next input
                 _, topi = decoder_output.topk(1)
-                decoder_input = topi.squeeze(-1).detach()  # detach from history as input
+                decoder_input = topi.squeeze(-1).detach()
 
         decoder_outputs = torch.cat(decoder_outputs, dim=1)
         decoder_outputs = F.log_softmax(decoder_outputs, dim=-1)
@@ -241,6 +267,8 @@ class DecoderRNN(nn.Module):
         return output, hidden
 
 
+
+# Bahdanau Attention mechanism
 class BahdanauAttention(nn.Module):
     def __init__(self, hidden_size):
         super(BahdanauAttention, self).__init__()
@@ -249,6 +277,7 @@ class BahdanauAttention(nn.Module):
         self.Va = nn.Linear(hidden_size, 1)
 
     def forward(self, query, keys):
+        # Calculate attention scores and context
         scores = self.Va(torch.tanh(self.Wa(query) + self.Ua(keys)))
         scores = scores.squeeze(2).unsqueeze(1)
 
@@ -257,6 +286,8 @@ class BahdanauAttention(nn.Module):
 
         return context, weights
 
+
+# Attention-based Decoder RNN
 class AttnDecoderRNN(nn.Module):
     def __init__(self, hidden_size, output_size, dropout_p=0.1):
         super(AttnDecoderRNN, self).__init__()
@@ -273,6 +304,7 @@ class AttnDecoderRNN(nn.Module):
         decoder_outputs = []
         attentions = []
 
+        # Decode with attention step by step
         for i in range(MAX_LENGTH):
             decoder_output, decoder_hidden, attn_weights = self.forward_step(
                 decoder_input, decoder_hidden, encoder_outputs
@@ -282,18 +314,17 @@ class AttnDecoderRNN(nn.Module):
 
             if target_tensor is not None:
                 # Teacher forcing: Feed the target as the next input
-                decoder_input = target_tensor[:, i].unsqueeze(1) # Teacher forcing
+                decoder_input = target_tensor[:, i].unsqueeze(1)
             else:
                 # Without teacher forcing: use its own predictions as the next input
                 _, topi = decoder_output.topk(1)
-                decoder_input = topi.squeeze(-1).detach()  # detach from history as input
+                decoder_input = topi.squeeze(-1).detach()
 
         decoder_outputs = torch.cat(decoder_outputs, dim=1)
         decoder_outputs = F.log_softmax(decoder_outputs, dim=-1)
         attentions = torch.cat(attentions, dim=1)
 
         return decoder_outputs, decoder_hidden, attentions
-
 
     def forward_step(self, input, hidden, encoder_outputs):
         embedded =  self.dropout(self.embedding(input))
@@ -327,20 +358,27 @@ class AttnDecoderRNN(nn.Module):
 # EOS token to both sequences.
 #
 
+
+# Convert sentence to list of word indices, using <UNK> for unknown words
 def indexesFromSentence(lang, sentence):
-    # Use <UNK> token for unknown words
     return [lang.word2index.get(word, lang.word2index["<UNK>"]) for word in sentence.split(' ')]
 
+
+# Convert sentence to tensor for model input
 def tensorFromSentence(lang, sentence):
     indexes = indexesFromSentence(lang, sentence)
     indexes.append(EOS_token)
     return torch.tensor(indexes, dtype=torch.long, device=device).view(1, -1)
 
+
+# Convert a pair of sentences to input and target tensors
 def tensorsFromPair(pair):
     input_tensor = tensorFromSentence(input_lang, pair[0])
     target_tensor = tensorFromSentence(output_lang, pair[1])
     return (input_tensor, target_tensor)
 
+
+# Build DataLoader for training batches
 def get_dataloader(batch_size):
     input_lang, output_lang, pairs = prepareData('eng', 'mni-Mtei', True)
 
@@ -348,6 +386,7 @@ def get_dataloader(batch_size):
     input_ids = np.zeros((n, MAX_LENGTH), dtype=np.int32)
     target_ids = np.zeros((n, MAX_LENGTH), dtype=np.int32)
 
+    # Convert all pairs to padded arrays
     for idx, (inp, tgt) in enumerate(pairs):
         inp_ids = indexesFromSentence(input_lang, inp)[:MAX_LENGTH-1]  # leave space for EOS
         tgt_ids = indexesFromSentence(output_lang, tgt)[:MAX_LENGTH-1]
