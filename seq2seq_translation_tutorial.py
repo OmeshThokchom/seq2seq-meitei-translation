@@ -159,56 +159,6 @@ print(random.choice(pairs))
 
 
 
-######################################################################
-# The Seq2Seq Model
-# =================
-#
-# A Recurrent Neural Network, or RNN, is a network that operates on a
-# sequence and uses its own output as input for subsequent steps.
-#
-# A `Sequence to Sequence network <https://arxiv.org/abs/1409.3215>`__, or
-# seq2seq network, or `Encoder Decoder
-# network <https://arxiv.org/pdf/1406.1078v3.pdf>`__, is a model
-# consisting of two RNNs called the encoder and decoder. The encoder reads
-# an input sequence and outputs a single vector, and the decoder reads
-# that vector to produce an output sequence.
-#
-# .. figure:: /_static/img/seq-seq-images/seq2seq.png
-#    :alt:
-#
-# Unlike sequence prediction with a single RNN, where every input
-# corresponds to an output, the seq2seq model frees us from sequence
-# length and order, which makes it ideal for translation between two
-# languages.
-#
-# Consider the sentence ``Je ne suis pas le chat noir`` → ``I am not the
-# black cat``. Most of the words in the input sentence have a direct
-# translation in the output sentence, but are in slightly different
-# orders, e.g. ``chat noir`` and ``black cat``. Because of the ``ne/pas``
-# construction there is also one more word in the input sentence. It would
-# be difficult to produce a correct translation directly from the sequence
-# of input words.
-#
-# With a seq2seq model the encoder creates a single vector which, in the
-# ideal case, encodes the "meaning" of the input sequence into a single
-# vector — a single point in some N dimensional space of sentences.
-#
-
-
-######################################################################
-# The Encoder
-# -----------
-#
-# The encoder of a seq2seq network is a RNN that outputs some value for
-# every word from the input sentence. For every input word the encoder
-# outputs a vector and a hidden state, and uses the hidden state for the
-# next input word.
-#
-# .. figure:: /_static/img/seq-seq-images/encoder-network.png
-#    :alt:
-#
-#
-
 class EncoderRNN(nn.Module):
     def __init__(self, input_size, hidden_size, dropout_p=0.1):
         super(EncoderRNN, self).__init__()
@@ -288,58 +238,6 @@ class DecoderRNN(nn.Module):
         output = self.out(output)
         return output, hidden
 
-######################################################################
-# I encourage you to train and observe the results of this model, but to
-# save space we'll be going straight for the gold and introducing the
-# Attention Mechanism.
-#
-
-
-######################################################################
-# Attention Decoder
-# ^^^^^^^^^^^^^^^^^
-#
-# If only the context vector is passed between the encoder and decoder,
-# that single vector carries the burden of encoding the entire sentence.
-#
-# Attention allows the decoder network to "focus" on a different part of
-# the encoder's outputs for every step of the decoder's own outputs. First
-# we calculate a set of *attention weights*. These will be multiplied by
-# the encoder output vectors to create a weighted combination. The result
-# (called ``attn_applied`` in the code) should contain information about
-# that specific part of the input sequence, and thus help the decoder
-# choose the right output words.
-#
-# .. figure:: https://i.imgur.com/1152PYf.png
-#    :alt:
-#
-# Calculating the attention weights is done with another feed-forward
-# layer ``attn``, using the decoder's input and hidden state as inputs.
-# Because there are sentences of all sizes in the training data, to
-# actually create and train this layer we have to choose a maximum
-# sentence length (input length, for encoder outputs) that it can apply
-# to. Sentences of the maximum length will use all the attention weights,
-# while shorter sentences will only use the first few.
-#
-# .. figure:: /_static/img/seq-seq-images/attention-decoder-network.png
-#    :alt:
-#
-#
-# Bahdanau attention, also known as additive attention, is a commonly used
-# attention mechanism in sequence-to-sequence models, particularly in neural
-# machine translation tasks. It was introduced by Bahdanau et al. in their
-# paper titled `Neural Machine Translation by Jointly Learning to Align and Translate <https://arxiv.org/pdf/1409.0473.pdf>`__.
-# This attention mechanism employs a learned alignment model to compute attention
-# scores between the encoder and decoder hidden states. It utilizes a feed-forward
-# neural network to calculate alignment scores.
-#
-# However, there are alternative attention mechanisms available, such as Luong attention,
-# which computes attention scores by taking the dot product between the decoder hidden
-# state and the encoder hidden states. It does not involve the non-linear transformation
-# used in Bahdanau attention.
-#
-# In this tutorial, we will be using Bahdanau attention. However, it would be a valuable
-# exercise to explore modifying the attention mechanism to use Luong attention.
 
 class BahdanauAttention(nn.Module):
     def __init__(self, hidden_size):
@@ -550,11 +448,11 @@ def timeSince(since, percent):
 #
 
 def train(train_dataloader, encoder, decoder, n_epochs, learning_rate=0.001,
-               print_every=100, plot_every=100):
+          print_every=100, plot_every=100, save_every=5):
     start = time.time()
     plot_losses = []
     print_loss_total = 0  # Reset every print_every
-    plot_loss_total = 0  # Reset every plot_every
+    plot_loss_total = 0   # Reset every plot_every
 
     encoder_optimizer = optim.Adam(encoder.parameters(), lr=learning_rate)
     decoder_optimizer = optim.Adam(decoder.parameters(), lr=learning_rate)
@@ -568,15 +466,29 @@ def train(train_dataloader, encoder, decoder, n_epochs, learning_rate=0.001,
         if epoch % print_every == 0:
             print_loss_avg = print_loss_total / print_every
             print_loss_total = 0
-            print('%s (%d %d%%) %.4f' % (timeSince(start, epoch / n_epochs),
-                                        epoch, epoch / n_epochs * 100, print_loss_avg))
+            print('%s (Epoch %d %.0f%%) %.4f' % (timeSince(start, epoch / n_epochs),
+                                                 epoch, epoch / n_epochs * 100, print_loss_avg))
 
         if epoch % plot_every == 0:
             plot_loss_avg = plot_loss_total / plot_every
             plot_losses.append(plot_loss_avg)
             plot_loss_total = 0
 
+        # 💾 Save checkpoint every `save_every` epochs
+        if epoch % save_every == 0:
+            os.makedirs("checkpoints", exist_ok=True)  # make folder if not exists
+            torch.save({
+                'epoch': epoch,
+                'encoder_state_dict': encoder.state_dict(),
+                'decoder_state_dict': decoder.state_dict(),
+                'encoder_optimizer_state_dict': encoder_optimizer.state_dict(),
+                'decoder_optimizer_state_dict': decoder_optimizer.state_dict(),
+                'loss': loss
+            }, f"checkpoints/checkpoint_epoch_{epoch}.pth")
+            print(f"💾 Saved checkpoint at epoch {epoch}")
+
     showPlot(plot_losses)
+
 
 ######################################################################
 # Plotting results
@@ -603,13 +515,6 @@ def showPlot(points):
 ######################################################################
 # Evaluation
 # ==========
-#
-# Evaluation is mostly the same as training, but there are no targets so
-# we simply feed the decoder's predictions back to itself for each step.
-# Every time it predicts a word we add it to the output string, and if it
-# predicts the EOS token we stop there. We also store the decoder's
-# attention outputs for display later.
-#
 
 def evaluate(encoder, decoder, sentence, input_lang, output_lang):
     with torch.no_grad():
@@ -650,21 +555,8 @@ def evaluateRandomly(encoder, decoder, n=10):
 ######################################################################
 # Training and Evaluating
 # =======================
-#
-# With all these helper functions in place (it looks like extra work, but
-# it makes it easier to run multiple experiments) we can actually
-# initialize a network and start training.
-#
-# Remember that the input sentences were heavily filtered. For this small
-# dataset we can use relatively small networks of 256 hidden nodes and a
-# single GRU layer. After about 40 minutes on a MacBook CPU we'll get some
-# reasonable results.
-#
-# .. note::
-#    If you run this notebook you can train, interrupt the kernel,
-#    evaluate, and continue training later. Comment out the lines where the
-#    encoder and decoder are initialized and run ``trainIters`` again.
-#
+
+import os, glob
 
 hidden_size = 128
 batch_size = 32
@@ -674,7 +566,35 @@ input_lang, output_lang, train_dataloader = get_dataloader(batch_size)
 encoder = EncoderRNN(input_lang.n_words, hidden_size).to(device)
 decoder = AttnDecoderRNN(hidden_size, output_lang.n_words).to(device)
 
-train(train_dataloader, encoder, decoder, 80, print_every=5, plot_every=5)
+encoder_optimizer = optim.Adam(encoder.parameters(), lr=0.001)
+decoder_optimizer = optim.Adam(decoder.parameters(), lr=0.001)
+
+# 🔄 Auto-load latest checkpoint if exists
+checkpoint_dir = "checkpoints"
+os.makedirs(checkpoint_dir, exist_ok=True)
+
+checkpoint_files = glob.glob(os.path.join(checkpoint_dir, "checkpoint_epoch_*.pth"))
+
+if checkpoint_files:
+    checkpoint_files.sort(key=lambda x: int(x.split("_")[-1].split(".")[0]))
+    latest_checkpoint = checkpoint_files[-1]
+
+    print(f"Loading checkpoint: {latest_checkpoint}")
+    checkpoint = torch.load(latest_checkpoint, map_location=device)
+
+    encoder.load_state_dict(checkpoint['encoder_state_dict'])
+    decoder.load_state_dict(checkpoint['decoder_state_dict'])
+    encoder_optimizer.load_state_dict(checkpoint['encoder_optimizer_state_dict'])
+    decoder_optimizer.load_state_dict(checkpoint['decoder_optimizer_state_dict'])
+
+    start_epoch = checkpoint['epoch'] + 1
+    print(f"✅ Resumed from epoch {start_epoch}, last loss = {checkpoint['loss']:.4f}")
+else:
+    print("⚡ No checkpoints found. Starting fresh.")
+    start_epoch = 1
+
+# 🚀 Start training from start_epoch
+train(train_dataloader, encoder, decoder, n_epochs=80, print_every=5, plot_every=5)
 
 ######################################################################
 #
