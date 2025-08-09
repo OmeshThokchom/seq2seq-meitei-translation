@@ -106,7 +106,7 @@ def readLangs(lang1, lang2, reverse=False):
 # earlier).
 #
 
-MAX_LENGTH = 256
+MAX_LENGTH = 64
 
 eng_prefixes = (
     "i am ", "i m ",
@@ -561,8 +561,8 @@ def evaluateRandomly(encoder, decoder, n=10):
 
 import os, glob
 
-hidden_size = 128
-batch_size = 32
+hidden_size = 64
+batch_size = 8
 
 
 if __name__ == "__main__":
